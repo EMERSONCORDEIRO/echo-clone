@@ -13,6 +13,10 @@ export default {
       },
     },
     extend: {
+      fontFamily: {
+        sans: ['Inter', 'sans-serif'],
+        mono: ['JetBrains Mono', 'monospace'],
+      },
       colors: {
         border: "hsl(var(--border))",
         input: "hsl(var(--input))",
@@ -46,6 +50,22 @@ export default {
         card: {
           DEFAULT: "hsl(var(--card))",
           foreground: "hsl(var(--card-foreground))",
+        },
+        canvas: {
+          DEFAULT: "hsl(var(--canvas-bg))",
+          grid: "hsl(var(--canvas-grid))",
+          "grid-major": "hsl(var(--canvas-grid-major))",
+        },
+        component: {
+          stroke: "hsl(var(--component-stroke))",
+          fill: "hsl(var(--component-fill))",
+        },
+        wire: "hsl(var(--wire-color))",
+        terminal: "hsl(var(--terminal-color))",
+        selection: "hsl(var(--selection-color))",
+        success: {
+          DEFAULT: "hsl(var(--success))",
+          foreground: "hsl(var(--success-foreground))",
         },
         sidebar: {
           DEFAULT: "hsl(var(--sidebar-background))",
