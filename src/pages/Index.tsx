@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { useSchematicEditor } from '@/hooks/useSchematicEditor';
 import { Toolbar } from '@/components/editor/Toolbar';
 import { ComponentPalette } from '@/components/editor/ComponentPalette';
@@ -18,7 +18,6 @@ const Index = () => {
   const handleCanvasClick = useCallback((point: Point) => {
     if (placingComponent) {
       editor.addComponent(placingComponent, point);
-      // Keep placing same component for rapid placement
     } else if (editor.state.activeTool === 'wire') {
       editor.addWirePoint(point);
     }
@@ -52,6 +51,16 @@ const Index = () => {
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+      
+      if (e.ctrlKey || e.metaKey) {
+        switch (e.key.toLowerCase()) {
+          case 'z': e.preventDefault(); editor.undo(); return;
+          case 'y': e.preventDefault(); editor.redo(); return;
+          case 'd': e.preventDefault(); editor.duplicateSelected(); return;
+          case 's': e.preventDefault(); editor.saveProject(); return;
+        }
+      }
+
       switch (e.key.toLowerCase()) {
         case 'v': editor.setTool('select'); setPlacingComponent(null); break;
         case 'w': editor.setTool('wire'); setPlacingComponent(null); break;
@@ -85,7 +94,16 @@ const Index = () => {
         onZoomIn={() => editor.setZoom(editor.state.zoom * 1.2)}
         onZoomOut={() => editor.setZoom(editor.state.zoom / 1.2)}
         onClear={editor.clearAll}
+        onUndo={editor.undo}
+        onRedo={editor.redo}
+        onSave={editor.saveProject}
+        onLoad={editor.loadProject}
+        onSimToggle={editor.toggleSimulation}
+        onDuplicate={editor.duplicateSelected}
         zoom={editor.state.zoom}
+        canUndo={editor.state.undoStack.length > 0}
+        canRedo={editor.state.redoStack.length > 0}
+        simulating={editor.state.simulating}
       />
       <div className="flex flex-1 overflow-hidden">
         <ComponentPalette
@@ -101,6 +119,7 @@ const Index = () => {
           pan={editor.state.pan}
           placingComponent={placingComponent}
           wireInProgress={editor.getWireInProgress()}
+          simulating={editor.state.simulating}
           onCanvasClick={handleCanvasClick}
           onCanvasRightClick={handleCanvasRightClick}
           onComponentClick={handleComponentClick}
@@ -109,7 +128,10 @@ const Index = () => {
           onPanChange={editor.setPan}
           onZoomChange={editor.setZoom}
         />
-        <PropertiesPanel selectedComponent={selectedComponent} />
+        <PropertiesPanel
+          selectedComponent={selectedComponent}
+          onUpdateLabel={editor.updateComponentLabel}
+        />
       </div>
     </div>
   );

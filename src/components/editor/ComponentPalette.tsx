@@ -26,7 +26,7 @@ export function ComponentPalette({ onSelectComponent, selectedComponentType }: C
     <div className="w-56 bg-card border-r border-border flex flex-col overflow-hidden">
       <div className="px-3 py-2 border-b border-border">
         <h2 className="text-xs font-mono font-semibold text-primary uppercase tracking-wider">
-          Components
+          Componentes
         </h2>
       </div>
       <div className="flex-1 overflow-y-auto py-1">

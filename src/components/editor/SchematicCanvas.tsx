@@ -11,6 +11,7 @@ interface SchematicCanvasProps {
   pan: Point;
   placingComponent: ComponentType | null;
   wireInProgress: Point[] | null;
+  simulating: boolean;
   onCanvasClick: (point: Point) => void;
   onCanvasRightClick: () => void;
   onComponentClick: (id: string) => void;
@@ -21,14 +22,14 @@ interface SchematicCanvasProps {
 }
 
 const COLORS = {
-  stroke: '#38bdf8',    // primary blue
-  fill: '#1e293b',      // card bg
-  selection: '#34d399', // selection green
-  wire: '#eab308',      // wire yellow
+  stroke: '#38bdf8',
+  fill: '#1e293b',
+  selection: '#34d399',
+  wire: '#eab308',
+  wireEnergized: '#f97316',
   grid: '#2d3748',
   gridMajor: '#374151',
   bg: '#1a2332',
-  terminal: '#ef4444',
 };
 
 export function SchematicCanvas({
@@ -40,6 +41,7 @@ export function SchematicCanvas({
   pan,
   placingComponent,
   wireInProgress,
+  simulating,
   onCanvasClick,
   onCanvasRightClick,
   onComponentClick,
@@ -67,13 +69,11 @@ export function SchematicCanvas({
     (ctx: CanvasRenderingContext2D, width: number, height: number) => {
       const gridSize = 20;
       const majorGridSize = gridSize * 5;
-
       const startX = Math.floor(-pan.x / zoom / gridSize) * gridSize;
       const startY = Math.floor(-pan.y / zoom / gridSize) * gridSize;
       const endX = startX + width / zoom + gridSize * 2;
       const endY = startY + height / zoom + gridSize * 2;
 
-      // Minor grid
       ctx.strokeStyle = COLORS.grid;
       ctx.lineWidth = 0.5;
       ctx.beginPath();
@@ -89,7 +89,6 @@ export function SchematicCanvas({
       }
       ctx.stroke();
 
-      // Major grid
       ctx.strokeStyle = COLORS.gridMajor;
       ctx.lineWidth = 1;
       ctx.beginPath();
@@ -120,22 +119,19 @@ export function SchematicCanvas({
     const ctx = canvas.getContext('2d')!;
     ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
 
-    // Clear
     ctx.fillStyle = COLORS.bg;
     ctx.fillRect(0, 0, rect.width, rect.height);
 
-    // Apply transform
     ctx.save();
     ctx.translate(pan.x, pan.y);
     ctx.scale(zoom, zoom);
 
-    // Grid
     drawGrid(ctx, rect.width, rect.height);
 
     // Wires
     wires.forEach(wire => {
       const isSelected = selectedIds.includes(wire.id);
-      ctx.strokeStyle = isSelected ? COLORS.selection : COLORS.wire;
+      ctx.strokeStyle = isSelected ? COLORS.selection : (wire.energized ? COLORS.wireEnergized : COLORS.wire);
       ctx.lineWidth = isSelected ? 3 : 2;
       ctx.beginPath();
       wire.points.forEach((p, i) => {
@@ -143,10 +139,8 @@ export function SchematicCanvas({
         else ctx.lineTo(p.x, p.y);
       });
       ctx.stroke();
-
-      // Wire points
       wire.points.forEach(p => {
-        ctx.fillStyle = COLORS.wire;
+        ctx.fillStyle = wire.energized ? COLORS.wireEnergized : COLORS.wire;
         ctx.beginPath();
         ctx.arc(p.x, p.y, 3, 0, Math.PI * 2);
         ctx.fill();
@@ -163,12 +157,8 @@ export function SchematicCanvas({
         if (i === 0) ctx.moveTo(p.x, p.y);
         else ctx.lineTo(p.x, p.y);
       });
-      // Line to current mouse position
       const worldMouse = screenToWorld(mousePos.x, mousePos.y);
-      const snapped = {
-        x: snapToGrid(worldMouse.x, 20),
-        y: snapToGrid(worldMouse.y, 20),
-      };
+      const snapped = { x: snapToGrid(worldMouse.x, 20), y: snapToGrid(worldMouse.y, 20) };
       ctx.lineTo(snapped.x, snapped.y);
       ctx.stroke();
       ctx.setLineDash([]);
@@ -178,17 +168,11 @@ export function SchematicCanvas({
     components.forEach(comp => {
       const isSelected = selectedIds.includes(comp.id);
       drawComponent(
-        ctx,
-        comp.type,
-        comp.position.x,
-        comp.position.y,
-        comp.rotation,
-        isSelected,
-        COLORS.stroke,
-        COLORS.fill,
-        COLORS.selection
+        ctx, comp.type, comp.position.x, comp.position.y,
+        comp.rotation, isSelected,
+        COLORS.stroke, COLORS.fill, COLORS.selection,
+        comp.simState
       );
-
       // Label
       ctx.save();
       ctx.translate(comp.position.x, comp.position.y);
@@ -196,48 +180,46 @@ export function SchematicCanvas({
       ctx.fillStyle = isSelected ? COLORS.selection : '#94a3b8';
       ctx.textAlign = 'left';
       ctx.textBaseline = 'middle';
-      ctx.fillText(comp.label, 25, 0);
+      ctx.fillText(comp.label, 30, 0);
       ctx.restore();
     });
 
     // Placing preview
     if (placingComponent) {
       const worldMouse = screenToWorld(mousePos.x, mousePos.y);
-      const snapped = {
-        x: snapToGrid(worldMouse.x, 20),
-        y: snapToGrid(worldMouse.y, 20),
-      };
+      const snapped = { x: snapToGrid(worldMouse.x, 20), y: snapToGrid(worldMouse.y, 20) };
       ctx.globalAlpha = 0.5;
-      drawComponent(
-        ctx,
-        placingComponent,
-        snapped.x,
-        snapped.y,
-        0,
-        false,
-        COLORS.stroke,
-        COLORS.fill,
-        COLORS.selection
-      );
+      drawComponent(ctx, placingComponent, snapped.x, snapped.y, 0, false, COLORS.stroke, COLORS.fill, COLORS.selection);
       ctx.globalAlpha = 1;
     }
 
     ctx.restore();
 
-    // Status bar overlay
+    // Status bar
     const worldMouse = screenToWorld(mousePos.x, mousePos.y);
-    ctx.fillStyle = 'rgba(0,0,0,0.6)';
-    ctx.fillRect(0, rect.height - 24, rect.width, 24);
+    ctx.fillStyle = 'rgba(0,0,0,0.7)';
+    ctx.fillRect(0, rect.height - 26, rect.width, 26);
     ctx.font = '11px "JetBrains Mono"';
     ctx.fillStyle = '#94a3b8';
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
+
+    const toolNames: Record<string, string> = {
+      select: 'SELECIONAR', move: 'MOVER', wire: 'FIO', delete: 'APAGAR',
+      text: 'TEXTO', zoom_in: 'ZOOM+', zoom_out: 'ZOOM-',
+    };
+
     ctx.fillText(
-      `X: ${Math.round(worldMouse.x)}  Y: ${Math.round(worldMouse.y)}  |  Components: ${components.length}  Wires: ${wires.length}  |  Tool: ${activeTool.toUpperCase()}`,
-      10,
-      rect.height - 12
+      `X: ${Math.round(worldMouse.x)}  Y: ${Math.round(worldMouse.y)}  |  Componentes: ${components.length}  Fios: ${wires.length}  |  Ferramenta: ${toolNames[activeTool] || activeTool.toUpperCase()}`,
+      10, rect.height - 13
     );
-  }, [components, wires, selectedIds, pan, zoom, mousePos, placingComponent, wireInProgress, activeTool, drawGrid, screenToWorld]);
+
+    if (simulating) {
+      ctx.fillStyle = '#22c55e';
+      ctx.textAlign = 'right';
+      ctx.fillText('● SIMULAÇÃO ATIVA', rect.width - 10, rect.height - 13);
+    }
+  }, [components, wires, selectedIds, pan, zoom, mousePos, placingComponent, wireInProgress, activeTool, simulating, drawGrid, screenToWorld]);
 
   useEffect(() => {
     const animFrame = requestAnimationFrame(render);
@@ -246,7 +228,6 @@ export function SchematicCanvas({
 
   const findComponentAt = useCallback(
     (worldPoint: Point): SchematicComponent | undefined => {
-      // Reverse order (top-most first)
       for (let i = components.length - 1; i >= 0; i--) {
         const comp = components[i];
         const bounds = getComponentBounds(comp.type);
@@ -255,9 +236,7 @@ export function SchematicCanvas({
           worldPoint.x <= comp.position.x + bounds.width &&
           worldPoint.y >= comp.position.y - bounds.height / 2 &&
           worldPoint.y <= comp.position.y + bounds.height / 2
-        ) {
-          return comp;
-        }
+        ) return comp;
       }
       return undefined;
     },
@@ -270,8 +249,7 @@ export function SchematicCanvas({
         for (let i = 0; i < wire.points.length - 1; i++) {
           const a = wire.points[i];
           const b = wire.points[i + 1];
-          const dist = distToSegment(worldPoint, a, b);
-          if (dist < 8) return wire;
+          if (distToSegment(worldPoint, a, b) < 8) return wire;
         }
       }
       return undefined;
@@ -291,7 +269,6 @@ export function SchematicCanvas({
         setPanStart({ x: sx - pan.x, y: sy - pan.y });
         return;
       }
-
       if (e.button === 2) {
         e.preventDefault();
         onCanvasRightClick();
@@ -304,33 +281,19 @@ export function SchematicCanvas({
         const comp = findComponentAt(world);
         if (comp) {
           onComponentClick(comp.id);
-          if (activeTool === 'move' || activeTool === 'select') {
-            setDragging({
-              id: comp.id,
-              offset: { x: world.x - comp.position.x, y: world.y - comp.position.y },
-            });
-          }
+          setDragging({ id: comp.id, offset: { x: world.x - comp.position.x, y: world.y - comp.position.y } });
           return;
         }
         const wire = findWireAt(world);
-        if (wire) {
-          onWireClick(wire.id);
-          return;
-        }
+        if (wire) { onWireClick(wire.id); return; }
         onComponentClick('');
       }
 
       if (activeTool === 'delete') {
         const comp = findComponentAt(world);
-        if (comp) {
-          onComponentClick(comp.id);
-          return;
-        }
+        if (comp) { onComponentClick(comp.id); return; }
         const wire = findWireAt(world);
-        if (wire) {
-          onWireClick(wire.id);
-          return;
-        }
+        if (wire) { onWireClick(wire.id); return; }
       }
     },
     [activeTool, pan, zoom, findComponentAt, findWireAt, onComponentClick, onWireClick, onCanvasRightClick, screenToWorld]
@@ -343,18 +306,10 @@ export function SchematicCanvas({
       const sx = e.clientX - rect.left;
       const sy = e.clientY - rect.top;
       setMousePos({ x: sx, y: sy });
-
-      if (panning) {
-        onPanChange({ x: sx - panStart.x, y: sy - panStart.y });
-        return;
-      }
-
+      if (panning) { onPanChange({ x: sx - panStart.x, y: sy - panStart.y }); return; }
       if (dragging) {
         const world = screenToWorld(sx, sy);
-        onComponentDrag(dragging.id, {
-          x: world.x - dragging.offset.x,
-          y: world.y - dragging.offset.y,
-        });
+        onComponentDrag(dragging.id, { x: world.x - dragging.offset.x, y: world.y - dragging.offset.y });
       }
     },
     [panning, panStart, dragging, screenToWorld, onPanChange, onComponentDrag]
@@ -372,7 +327,6 @@ export function SchematicCanvas({
       const sx = e.clientX - rect.left;
       const sy = e.clientY - rect.top;
       const world = screenToWorld(sx, sy);
-
       if (placingComponent || activeTool === 'wire') {
         onCanvasClick(world);
       }
@@ -385,32 +339,18 @@ export function SchematicCanvas({
       e.preventDefault();
       const delta = e.deltaY > 0 ? 0.9 : 1.1;
       const newZoom = Math.max(0.25, Math.min(3, zoom * delta));
-
       const rect = containerRef.current?.getBoundingClientRect();
       if (!rect) return;
       const sx = e.clientX - rect.left;
       const sy = e.clientY - rect.top;
-
-      // Zoom toward cursor
-      const newPanX = sx - (sx - pan.x) * (newZoom / zoom);
-      const newPanY = sy - (sy - pan.y) * (newZoom / zoom);
-
       onZoomChange(newZoom);
-      onPanChange({ x: newPanX, y: newPanY });
+      onPanChange({ x: sx - (sx - pan.x) * (newZoom / zoom), y: sy - (sy - pan.y) * (newZoom / zoom) });
     },
     [zoom, pan, onZoomChange, onPanChange]
   );
 
-  const handleContextMenu = useCallback((e: React.MouseEvent) => {
-    e.preventDefault();
-  }, []);
-
   return (
-    <div
-      ref={containerRef}
-      className="flex-1 relative overflow-hidden cursor-crosshair"
-      onContextMenu={handleContextMenu}
-    >
+    <div ref={containerRef} className="flex-1 relative overflow-hidden cursor-crosshair" onContextMenu={(e) => e.preventDefault()}>
       <canvas
         ref={canvasRef}
         onMouseDown={handleMouseDown}
@@ -425,10 +365,8 @@ export function SchematicCanvas({
   );
 }
 
-// Utility: distance from point to line segment
 function distToSegment(p: Point, a: Point, b: Point): number {
-  const dx = b.x - a.x;
-  const dy = b.y - a.y;
+  const dx = b.x - a.x, dy = b.y - a.y;
   const lenSq = dx * dx + dy * dy;
   if (lenSq === 0) return Math.hypot(p.x - a.x, p.y - a.y);
   let t = ((p.x - a.x) * dx + (p.y - a.y) * dy) / lenSq;
