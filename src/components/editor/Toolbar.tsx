@@ -4,14 +4,20 @@ import {
   Minus,
   Trash2,
   Move,
-  Type,
   RotateCw,
   ZoomIn,
   ZoomOut,
   FileText,
-  Download,
   Eraser,
+  Undo2,
+  Redo2,
+  Save,
+  FolderOpen,
+  Play,
+  Square,
+  Copy,
 } from 'lucide-react';
+import { useRef } from 'react';
 
 interface ToolbarProps {
   activeTool: Tool;
@@ -21,14 +27,23 @@ interface ToolbarProps {
   onZoomIn: () => void;
   onZoomOut: () => void;
   onClear: () => void;
+  onUndo: () => void;
+  onRedo: () => void;
+  onSave: () => void;
+  onLoad: (json: string) => void;
+  onSimToggle: () => void;
+  onDuplicate: () => void;
   zoom: number;
+  canUndo: boolean;
+  canRedo: boolean;
+  simulating: boolean;
 }
 
-const tools: { tool: Tool; icon: React.ReactNode; label: string }[] = [
-  { tool: 'select', icon: <MousePointer2 size={18} />, label: 'Select (V)' },
-  { tool: 'move', icon: <Move size={18} />, label: 'Move (M)' },
-  { tool: 'wire', icon: <Minus size={18} />, label: 'Wire (W)' },
-  { tool: 'delete', icon: <Trash2 size={18} />, label: 'Delete (D)' },
+const tools: { tool: Tool; icon: React.ReactNode; label: string; shortcut: string }[] = [
+  { tool: 'select', icon: <MousePointer2 size={18} />, label: 'Selecionar', shortcut: 'V' },
+  { tool: 'move', icon: <Move size={18} />, label: 'Mover', shortcut: 'M' },
+  { tool: 'wire', icon: <Minus size={18} />, label: 'Fio', shortcut: 'W' },
+  { tool: 'delete', icon: <Trash2 size={18} />, label: 'Apagar', shortcut: 'D' },
 ];
 
 export function Toolbar({
@@ -39,87 +54,133 @@ export function Toolbar({
   onZoomIn,
   onZoomOut,
   onClear,
+  onUndo,
+  onRedo,
+  onSave,
+  onLoad,
+  onSimToggle,
+  onDuplicate,
   zoom,
+  canUndo,
+  canRedo,
+  simulating,
 }: ToolbarProps) {
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleFileLoad = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      onLoad(ev.target?.result as string);
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+  };
+
+  const BtnClass = (active?: boolean, disabled?: boolean) =>
+    `p-2 rounded transition-colors ${
+      active
+        ? 'bg-primary text-primary-foreground'
+        : disabled
+        ? 'text-muted-foreground/40 cursor-not-allowed'
+        : 'text-muted-foreground hover:text-foreground hover:bg-secondary'
+    }`;
+
   return (
-    <div className="flex items-center gap-1 bg-muted px-3 py-1.5 border-b border-border">
+    <div className="flex items-center gap-1 bg-muted px-3 py-1.5 border-b border-border select-none">
       {/* Logo */}
       <div className="flex items-center gap-2 mr-4 pr-4 border-r border-border">
         <span className="text-primary font-mono font-bold text-sm">CADe</span>
         <span className="text-muted-foreground font-mono text-xs">SIMU</span>
       </div>
 
-      {/* Tools */}
-      <div className="flex items-center gap-0.5 mr-3 pr-3 border-r border-border">
-        {tools.map(({ tool, icon, label }) => (
+      {/* Arquivo */}
+      <div className="flex items-center gap-0.5 mr-2 pr-2 border-r border-border">
+        <button onClick={onClear} className={BtnClass()} title="Novo Esquema">
+          <FileText size={18} />
+        </button>
+        <button onClick={onSave} className={BtnClass()} title="Salvar Projeto">
+          <Save size={18} />
+        </button>
+        <button onClick={() => fileInputRef.current?.click()} className={BtnClass()} title="Abrir Projeto">
+          <FolderOpen size={18} />
+        </button>
+        <input ref={fileInputRef} type="file" accept=".json" onChange={handleFileLoad} className="hidden" />
+      </div>
+
+      {/* Desfazer/Refazer */}
+      <div className="flex items-center gap-0.5 mr-2 pr-2 border-r border-border">
+        <button onClick={onUndo} disabled={!canUndo} className={BtnClass(false, !canUndo)} title="Desfazer (Ctrl+Z)">
+          <Undo2 size={18} />
+        </button>
+        <button onClick={onRedo} disabled={!canRedo} className={BtnClass(false, !canRedo)} title="Refazer (Ctrl+Y)">
+          <Redo2 size={18} />
+        </button>
+      </div>
+
+      {/* Ferramentas */}
+      <div className="flex items-center gap-0.5 mr-2 pr-2 border-r border-border">
+        {tools.map(({ tool, icon, label, shortcut }) => (
           <button
             key={tool}
             onClick={() => onToolChange(tool)}
-            className={`p-2 rounded transition-colors ${
-              activeTool === tool
-                ? 'bg-primary text-primary-foreground'
-                : 'text-muted-foreground hover:text-foreground hover:bg-secondary'
-            }`}
-            title={label}
+            className={BtnClass(activeTool === tool)}
+            title={`${label} (${shortcut})`}
           >
             {icon}
           </button>
         ))}
       </div>
 
-      {/* Actions */}
-      <div className="flex items-center gap-0.5 mr-3 pr-3 border-r border-border">
-        <button
-          onClick={onRotate}
-          className="p-2 rounded text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
-          title="Rotate (R)"
-        >
+      {/* Ações */}
+      <div className="flex items-center gap-0.5 mr-2 pr-2 border-r border-border">
+        <button onClick={onRotate} className={BtnClass()} title="Rotacionar (R)">
           <RotateCw size={18} />
         </button>
-        <button
-          onClick={onDelete}
-          className="p-2 rounded text-muted-foreground hover:text-destructive hover:bg-secondary transition-colors"
-          title="Delete Selected"
-        >
+        <button onClick={onDuplicate} className={BtnClass()} title="Duplicar (Ctrl+D)">
+          <Copy size={18} />
+        </button>
+        <button onClick={onDelete} className={`${BtnClass()} hover:!text-destructive`} title="Apagar Selecionado (Del)">
           <Eraser size={18} />
         </button>
       </div>
 
       {/* Zoom */}
-      <div className="flex items-center gap-1 mr-3 pr-3 border-r border-border">
-        <button
-          onClick={onZoomOut}
-          className="p-2 rounded text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
-          title="Zoom Out"
-        >
+      <div className="flex items-center gap-1 mr-2 pr-2 border-r border-border">
+        <button onClick={onZoomOut} className={BtnClass()} title="Diminuir Zoom">
           <ZoomOut size={18} />
         </button>
         <span className="text-xs text-muted-foreground font-mono min-w-[3rem] text-center">
           {Math.round(zoom * 100)}%
         </span>
-        <button
-          onClick={onZoomIn}
-          className="p-2 rounded text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
-          title="Zoom In"
-        >
+        <button onClick={onZoomIn} className={BtnClass()} title="Aumentar Zoom">
           <ZoomIn size={18} />
         </button>
       </div>
 
-      {/* File */}
-      <div className="flex items-center gap-0.5">
+      {/* Simulação */}
+      <div className="flex items-center gap-1">
         <button
-          onClick={onClear}
-          className="p-2 rounded text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
-          title="New Schematic"
+          onClick={onSimToggle}
+          className={`p-2 rounded transition-colors flex items-center gap-1.5 text-xs font-medium ${
+            simulating
+              ? 'bg-destructive text-destructive-foreground'
+              : 'bg-success text-success-foreground hover:opacity-90'
+          }`}
+          title={simulating ? 'Parar Simulação' : 'Iniciar Simulação'}
         >
-          <FileText size={18} />
+          {simulating ? <Square size={14} /> : <Play size={14} />}
+          {simulating ? 'Parar' : 'Simular'}
         </button>
       </div>
 
-      {/* Spacer + Status */}
+      {/* Status */}
       <div className="ml-auto flex items-center gap-3">
-        <span className="text-xs text-muted-foreground font-mono">Grid: 20px</span>
+        {simulating && (
+          <span className="text-xs text-success font-mono animate-pulse">● SIMULANDO</span>
+        )}
+        <span className="text-xs text-muted-foreground font-mono">Grade: 20px</span>
       </div>
     </div>
   );

@@ -1,6 +1,7 @@
 import { useState, useCallback, useRef } from 'react';
-import { EditorState, SchematicComponent, Wire, Tool, ComponentType, Point } from '@/types/schematic';
+import { EditorState, SchematicComponent, Wire, Tool, ComponentType, Point, HistoryEntry } from '@/types/schematic';
 import { getTerminals, snapToGrid } from '@/lib/componentShapes';
+import { componentLabelsMap } from '@/lib/componentCategories';
 
 let idCounter = 0;
 const genId = () => `item_${++idCounter}`;
@@ -14,11 +15,52 @@ const initialState: EditorState = {
   pan: { x: 0, y: 0 },
   gridSize: 20,
   snapToGrid: true,
+  simulating: false,
+  undoStack: [],
+  redoStack: [],
 };
 
 export function useSchematicEditor() {
   const [state, setState] = useState<EditorState>(initialState);
   const wireInProgress = useRef<Point[] | null>(null);
+
+  const pushUndo = useCallback(() => {
+    setState(prev => ({
+      ...prev,
+      undoStack: [...prev.undoStack.slice(-50), { components: prev.components, wires: prev.wires }],
+      redoStack: [],
+    }));
+  }, []);
+
+  const undo = useCallback(() => {
+    setState(prev => {
+      if (prev.undoStack.length === 0) return prev;
+      const last = prev.undoStack[prev.undoStack.length - 1];
+      return {
+        ...prev,
+        components: last.components,
+        wires: last.wires,
+        undoStack: prev.undoStack.slice(0, -1),
+        redoStack: [...prev.redoStack, { components: prev.components, wires: prev.wires }],
+        selectedIds: [],
+      };
+    });
+  }, []);
+
+  const redo = useCallback(() => {
+    setState(prev => {
+      if (prev.redoStack.length === 0) return prev;
+      const last = prev.redoStack[prev.redoStack.length - 1];
+      return {
+        ...prev,
+        components: last.components,
+        wires: last.wires,
+        redoStack: prev.redoStack.slice(0, -1),
+        undoStack: [...prev.undoStack, { components: prev.components, wires: prev.wires }],
+        selectedIds: [],
+      };
+    });
+  }, []);
 
   const setTool = useCallback((tool: Tool) => {
     setState(prev => ({ ...prev, activeTool: tool, selectedIds: [] }));
@@ -26,16 +68,18 @@ export function useSchematicEditor() {
   }, []);
 
   const addComponent = useCallback((type: ComponentType, position: Point) => {
+    pushUndo();
     const snapped = {
       x: snapToGrid(position.x, 20),
       y: snapToGrid(position.y, 20),
     };
+    const label = componentLabelsMap[type] || type.replace(/_/g, ' ').toUpperCase();
     const comp: SchematicComponent = {
       id: genId(),
       type,
       position: snapped,
       rotation: 0,
-      label: type.replace(/_/g, ' ').toUpperCase(),
+      label,
       terminals: getTerminals(type),
       properties: {},
     };
@@ -44,7 +88,7 @@ export function useSchematicEditor() {
       components: [...prev.components, comp],
       selectedIds: [comp.id],
     }));
-  }, []);
+  }, [pushUndo]);
 
   const selectComponent = useCallback((id: string | null) => {
     setState(prev => ({
@@ -67,6 +111,7 @@ export function useSchematicEditor() {
   }, []);
 
   const rotateSelected = useCallback(() => {
+    pushUndo();
     setState(prev => ({
       ...prev,
       components: prev.components.map(c =>
@@ -75,16 +120,17 @@ export function useSchematicEditor() {
           : c
       ),
     }));
-  }, []);
+  }, [pushUndo]);
 
   const deleteSelected = useCallback(() => {
+    pushUndo();
     setState(prev => ({
       ...prev,
       components: prev.components.filter(c => !prev.selectedIds.includes(c.id)),
       wires: prev.wires.filter(w => !prev.selectedIds.includes(w.id)),
       selectedIds: [],
     }));
-  }, []);
+  }, [pushUndo]);
 
   const addWirePoint = useCallback((point: Point) => {
     const snapped = {
@@ -100,6 +146,7 @@ export function useSchematicEditor() {
 
   const finishWire = useCallback(() => {
     if (wireInProgress.current && wireInProgress.current.length >= 2) {
+      pushUndo();
       const wire: Wire = {
         id: genId(),
         points: [...wireInProgress.current],
@@ -110,7 +157,7 @@ export function useSchematicEditor() {
       }));
     }
     wireInProgress.current = null;
-  }, []);
+  }, [pushUndo]);
 
   const getWireInProgress = useCallback(() => wireInProgress.current, []);
 
@@ -123,18 +170,86 @@ export function useSchematicEditor() {
   }, []);
 
   const deleteItem = useCallback((id: string) => {
+    pushUndo();
     setState(prev => ({
       ...prev,
       components: prev.components.filter(c => c.id !== id),
       wires: prev.wires.filter(w => w.id !== id),
       selectedIds: prev.selectedIds.filter(s => s !== id),
     }));
-  }, []);
+  }, [pushUndo]);
 
   const clearAll = useCallback(() => {
-    setState(initialState);
+    pushUndo();
+    setState(prev => ({ ...initialState, undoStack: prev.undoStack, redoStack: prev.redoStack }));
     wireInProgress.current = null;
+  }, [pushUndo]);
+
+  const toggleSimulation = useCallback(() => {
+    setState(prev => ({ ...prev, simulating: !prev.simulating }));
   }, []);
+
+  const updateComponentLabel = useCallback((id: string, label: string) => {
+    pushUndo();
+    setState(prev => ({
+      ...prev,
+      components: prev.components.map(c =>
+        c.id === id ? { ...c, label } : c
+      ),
+    }));
+  }, [pushUndo]);
+
+  const duplicateSelected = useCallback(() => {
+    pushUndo();
+    setState(prev => {
+      const newComps = prev.components
+        .filter(c => prev.selectedIds.includes(c.id))
+        .map(c => ({
+          ...c,
+          id: genId(),
+          position: { x: c.position.x + 40, y: c.position.y + 40 },
+          terminals: c.terminals.map(t => ({ ...t, connected: false })),
+        }));
+      return {
+        ...prev,
+        components: [...prev.components, ...newComps],
+        selectedIds: newComps.map(c => c.id),
+      };
+    });
+  }, [pushUndo]);
+
+  // Save/Load
+  const saveProject = useCallback(() => {
+    const data = {
+      components: state.components,
+      wires: state.wires,
+      version: '1.0',
+    };
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'esquema_eletrico.json';
+    a.click();
+    URL.revokeObjectURL(url);
+  }, [state.components, state.wires]);
+
+  const loadProject = useCallback((json: string) => {
+    try {
+      const data = JSON.parse(json);
+      if (data.components && data.wires) {
+        pushUndo();
+        setState(prev => ({
+          ...prev,
+          components: data.components,
+          wires: data.wires,
+          selectedIds: [],
+        }));
+      }
+    } catch (e) {
+      console.error('Erro ao carregar projeto:', e);
+    }
+  }, [pushUndo]);
 
   return {
     state,
@@ -151,5 +266,12 @@ export function useSchematicEditor() {
     setPan,
     deleteItem,
     clearAll,
+    undo,
+    redo,
+    toggleSimulation,
+    updateComponentLabel,
+    duplicateSelected,
+    saveProject,
+    loadProject,
   };
 }
