@@ -1,7 +1,8 @@
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import { EditorState, SchematicComponent, Wire, Tool, ComponentType, Point, HistoryEntry } from '@/types/schematic';
 import { getTerminals, snapToGrid } from '@/lib/componentShapes';
 import { componentLabelsMap } from '@/lib/componentCategories';
+import { SimState, createInitialSimState, toggleSwitch, runSimulation, isToggleable } from '@/lib/simulationEngine';
 
 let idCounter = 0;
 const genId = () => `item_${++idCounter}`;
@@ -23,6 +24,7 @@ const initialState: EditorState = {
 export function useSchematicEditor() {
   const [state, setState] = useState<EditorState>(initialState);
   const wireInProgress = useRef<Point[] | null>(null);
+  const simStateRef = useRef<SimState | null>(null);
 
   const pushUndo = useCallback(() => {
     setState(prev => ({
@@ -183,11 +185,65 @@ export function useSchematicEditor() {
     pushUndo();
     setState(prev => ({ ...initialState, undoStack: prev.undoStack, redoStack: prev.redoStack }));
     wireInProgress.current = null;
+    simStateRef.current = null;
   }, [pushUndo]);
 
+  // === SIMULATION ===
   const toggleSimulation = useCallback(() => {
-    setState(prev => ({ ...prev, simulating: !prev.simulating }));
+    setState(prev => {
+      if (!prev.simulating) {
+        // Starting simulation
+        const simState = createInitialSimState(prev.components);
+        const result = runSimulation(prev.components, prev.wires, simState);
+        simStateRef.current = result;
+        
+        return {
+          ...prev,
+          simulating: true,
+          components: prev.components.map(c => ({
+            ...c,
+            simState: result.componentStates.get(c.id) || 'off',
+          })),
+          wires: prev.wires.map(w => ({
+            ...w,
+            energized: result.wireEnergized.get(w.id) || false,
+          })),
+        };
+      } else {
+        // Stopping simulation
+        simStateRef.current = null;
+        return {
+          ...prev,
+          simulating: false,
+          components: prev.components.map(c => ({ ...c, simState: undefined })),
+          wires: prev.wires.map(w => ({ ...w, energized: false })),
+        };
+      }
+    });
   }, []);
+
+  const handleSimClick = useCallback((componentId: string) => {
+    if (!simStateRef.current) return;
+    
+    const comp = state.components.find(c => c.id === componentId);
+    if (!comp || !isToggleable(comp.type)) return;
+
+    const newSimState = toggleSwitch(simStateRef.current, componentId);
+    const result = runSimulation(state.components, state.wires, newSimState);
+    simStateRef.current = result;
+
+    setState(prev => ({
+      ...prev,
+      components: prev.components.map(c => ({
+        ...c,
+        simState: result.componentStates.get(c.id) || 'off',
+      })),
+      wires: prev.wires.map(w => ({
+        ...w,
+        energized: result.wireEnergized.get(w.id) || false,
+      })),
+    }));
+  }, [state.components, state.wires]);
 
   const updateComponentLabel = useCallback((id: string, label: string) => {
     pushUndo();
@@ -218,11 +274,10 @@ export function useSchematicEditor() {
     });
   }, [pushUndo]);
 
-  // Save/Load
   const saveProject = useCallback(() => {
     const data = {
-      components: state.components,
-      wires: state.wires,
+      components: state.components.map(c => ({ ...c, simState: undefined })),
+      wires: state.wires.map(w => ({ ...w, energized: undefined })),
       version: '1.0',
     };
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
@@ -244,7 +299,9 @@ export function useSchematicEditor() {
           components: data.components,
           wires: data.wires,
           selectedIds: [],
+          simulating: false,
         }));
+        simStateRef.current = null;
       }
     } catch (e) {
       console.error('Erro ao carregar projeto:', e);
@@ -269,6 +326,7 @@ export function useSchematicEditor() {
     undo,
     redo,
     toggleSimulation,
+    handleSimClick,
     updateComponentLabel,
     duplicateSelected,
     saveProject,

@@ -1,6 +1,7 @@
 import { useRef, useEffect, useCallback, useState } from 'react';
 import { SchematicComponent, Wire, Tool, Point, ComponentType } from '@/types/schematic';
 import { drawComponent, getComponentBounds, snapToGrid } from '@/lib/componentShapes';
+import { isToggleable } from '@/lib/simulationEngine';
 
 interface SchematicCanvasProps {
   components: SchematicComponent[];
@@ -19,6 +20,7 @@ interface SchematicCanvasProps {
   onWireClick: (id: string) => void;
   onPanChange: (pan: Point) => void;
   onZoomChange: (zoom: number) => void;
+  onSimComponentClick?: (id: string) => void;
 }
 
 const COLORS = {
@@ -30,6 +32,8 @@ const COLORS = {
   grid: '#2d3748',
   gridMajor: '#374151',
   bg: '#1a2332',
+  simOn: '#22c55e',
+  simOff: '#64748b',
 };
 
 export function SchematicCanvas({
@@ -49,6 +53,7 @@ export function SchematicCanvas({
   onWireClick,
   onPanChange,
   onZoomChange,
+  onSimComponentClick,
 }: SchematicCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -56,6 +61,7 @@ export function SchematicCanvas({
   const [dragging, setDragging] = useState<{ id: string; offset: Point } | null>(null);
   const [panning, setPanning] = useState(false);
   const [panStart, setPanStart] = useState<Point>({ x: 0, y: 0 });
+  const didDrag = useRef(false);
 
   const screenToWorld = useCallback(
     (sx: number, sy: number): Point => ({
@@ -131,16 +137,25 @@ export function SchematicCanvas({
     // Wires
     wires.forEach(wire => {
       const isSelected = selectedIds.includes(wire.id);
-      ctx.strokeStyle = isSelected ? COLORS.selection : (wire.energized ? COLORS.wireEnergized : COLORS.wire);
-      ctx.lineWidth = isSelected ? 3 : 2;
+      const isEnergized = wire.energized && simulating;
+      ctx.strokeStyle = isSelected ? COLORS.selection : (isEnergized ? COLORS.wireEnergized : COLORS.wire);
+      ctx.lineWidth = isSelected ? 3 : (isEnergized ? 3 : 2);
+      
+      if (isEnergized) {
+        ctx.shadowColor = COLORS.wireEnergized;
+        ctx.shadowBlur = 6;
+      }
+      
       ctx.beginPath();
       wire.points.forEach((p, i) => {
         if (i === 0) ctx.moveTo(p.x, p.y);
         else ctx.lineTo(p.x, p.y);
       });
       ctx.stroke();
+      ctx.shadowBlur = 0;
+      
       wire.points.forEach(p => {
-        ctx.fillStyle = wire.energized ? COLORS.wireEnergized : COLORS.wire;
+        ctx.fillStyle = isEnergized ? COLORS.wireEnergized : COLORS.wire;
         ctx.beginPath();
         ctx.arc(p.x, p.y, 3, 0, Math.PI * 2);
         ctx.fill();
@@ -167,12 +182,37 @@ export function SchematicCanvas({
     // Components
     components.forEach(comp => {
       const isSelected = selectedIds.includes(comp.id);
+      const compStroke = simulating && comp.simState === 'on' ? COLORS.simOn : COLORS.stroke;
+      
       drawComponent(
         ctx, comp.type, comp.position.x, comp.position.y,
         comp.rotation, isSelected,
-        COLORS.stroke, COLORS.fill, COLORS.selection,
+        compStroke, COLORS.fill, COLORS.selection,
         comp.simState
       );
+
+      // Toggleable indicator during simulation
+      if (simulating && isToggleable(comp.type)) {
+        ctx.save();
+        ctx.translate(comp.position.x, comp.position.y);
+        
+        // Small indicator showing open/closed state
+        const isClosed = comp.simState === 'on';
+        ctx.fillStyle = isClosed ? '#22c55e' : '#ef4444';
+        ctx.beginPath();
+        ctx.arc(18, -18, 5, 0, Math.PI * 2);
+        ctx.fill();
+        
+        // Cursor hint
+        ctx.strokeStyle = '#ffffff44';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.arc(18, -18, 7, 0, Math.PI * 2);
+        ctx.stroke();
+        
+        ctx.restore();
+      }
+
       // Label
       ctx.save();
       ctx.translate(comp.position.x, comp.position.y);
@@ -185,7 +225,7 @@ export function SchematicCanvas({
     });
 
     // Placing preview
-    if (placingComponent) {
+    if (placingComponent && !simulating) {
       const worldMouse = screenToWorld(mousePos.x, mousePos.y);
       const snapped = { x: snapToGrid(worldMouse.x, 20), y: snapToGrid(worldMouse.y, 20) };
       ctx.globalAlpha = 0.5;
@@ -209,10 +249,11 @@ export function SchematicCanvas({
       text: 'TEXTO', zoom_in: 'ZOOM+', zoom_out: 'ZOOM-',
     };
 
-    ctx.fillText(
-      `X: ${Math.round(worldMouse.x)}  Y: ${Math.round(worldMouse.y)}  |  Componentes: ${components.length}  Fios: ${wires.length}  |  Ferramenta: ${toolNames[activeTool] || activeTool.toUpperCase()}`,
-      10, rect.height - 13
-    );
+    const statusText = simulating
+      ? `X: ${Math.round(worldMouse.x)}  Y: ${Math.round(worldMouse.y)}  |  Clique nos contatos/chaves para alternar`
+      : `X: ${Math.round(worldMouse.x)}  Y: ${Math.round(worldMouse.y)}  |  Componentes: ${components.length}  Fios: ${wires.length}  |  Ferramenta: ${toolNames[activeTool] || activeTool.toUpperCase()}`;
+
+    ctx.fillText(statusText, 10, rect.height - 13);
 
     if (simulating) {
       ctx.fillStyle = '#22c55e';
@@ -263,6 +304,7 @@ export function SchematicCanvas({
       if (!rect) return;
       const sx = e.clientX - rect.left;
       const sy = e.clientY - rect.top;
+      didDrag.current = false;
 
       if (e.button === 1 || (e.button === 0 && e.altKey)) {
         setPanning(true);
@@ -275,7 +317,27 @@ export function SchematicCanvas({
         return;
       }
 
+      // During simulation, clicking toggles switches
+      if (simulating && e.button === 0) {
+        const world = screenToWorld(sx, sy);
+        const comp = findComponentAt(world);
+        if (comp && onSimComponentClick) {
+          onSimComponentClick(comp.id);
+        }
+        return;
+      }
+
       const world = screenToWorld(sx, sy);
+
+      if (placingComponent) {
+        onCanvasClick(world);
+        return;
+      }
+
+      if (activeTool === 'wire') {
+        onCanvasClick(world);
+        return;
+      }
 
       if (activeTool === 'select' || activeTool === 'move') {
         const comp = findComponentAt(world);
@@ -296,7 +358,7 @@ export function SchematicCanvas({
         if (wire) { onWireClick(wire.id); return; }
       }
     },
-    [activeTool, pan, zoom, findComponentAt, findWireAt, onComponentClick, onWireClick, onCanvasRightClick, screenToWorld]
+    [activeTool, pan, zoom, findComponentAt, findWireAt, onComponentClick, onWireClick, onCanvasRightClick, screenToWorld, placingComponent, onCanvasClick, simulating, onSimComponentClick]
   );
 
   const handleMouseMove = useCallback(
@@ -308,6 +370,7 @@ export function SchematicCanvas({
       setMousePos({ x: sx, y: sy });
       if (panning) { onPanChange({ x: sx - panStart.x, y: sy - panStart.y }); return; }
       if (dragging) {
+        didDrag.current = true;
         const world = screenToWorld(sx, sy);
         onComponentDrag(dragging.id, { x: world.x - dragging.offset.x, y: world.y - dragging.offset.y });
       }
@@ -319,20 +382,6 @@ export function SchematicCanvas({
     setDragging(null);
     setPanning(false);
   }, []);
-
-  const handleClick = useCallback(
-    (e: React.MouseEvent) => {
-      const rect = containerRef.current?.getBoundingClientRect();
-      if (!rect) return;
-      const sx = e.clientX - rect.left;
-      const sy = e.clientY - rect.top;
-      const world = screenToWorld(sx, sy);
-      if (placingComponent || activeTool === 'wire') {
-        onCanvasClick(world);
-      }
-    },
-    [placingComponent, activeTool, screenToWorld, onCanvasClick]
-  );
 
   const handleWheel = useCallback(
     (e: React.WheelEvent) => {
@@ -349,15 +398,20 @@ export function SchematicCanvas({
     [zoom, pan, onZoomChange, onPanChange]
   );
 
+  const cursorClass = simulating ? 'cursor-pointer' : 
+    (placingComponent ? 'cursor-cell' : 
+    (activeTool === 'wire' ? 'cursor-crosshair' : 
+    (activeTool === 'delete' ? 'cursor-not-allowed' : 
+    (activeTool === 'move' ? 'cursor-move' : 'cursor-default'))));
+
   return (
-    <div ref={containerRef} className="flex-1 relative overflow-hidden cursor-crosshair" onContextMenu={(e) => e.preventDefault()}>
+    <div ref={containerRef} className={`flex-1 relative overflow-hidden ${cursorClass}`} onContextMenu={(e) => e.preventDefault()}>
       <canvas
         ref={canvasRef}
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
         onMouseLeave={handleMouseUp}
-        onClick={handleClick}
         onWheel={handleWheel}
         className="absolute inset-0"
       />

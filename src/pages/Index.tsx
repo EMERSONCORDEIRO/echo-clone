@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useRef } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { useSchematicEditor } from '@/hooks/useSchematicEditor';
 import { Toolbar } from '@/components/editor/Toolbar';
 import { ComponentPalette } from '@/components/editor/ComponentPalette';
@@ -11,11 +11,13 @@ const Index = () => {
   const [placingComponent, setPlacingComponent] = useState<ComponentType | null>(null);
 
   const handleSelectComponent = useCallback((type: ComponentType) => {
+    if (editor.state.simulating) return; // Block during simulation
     setPlacingComponent(type);
     editor.setTool('select');
   }, [editor]);
 
   const handleCanvasClick = useCallback((point: Point) => {
+    if (editor.state.simulating) return;
     if (placingComponent) {
       editor.addComponent(placingComponent, point);
     } else if (editor.state.activeTool === 'wire') {
@@ -32,6 +34,7 @@ const Index = () => {
   }, [placingComponent, editor]);
 
   const handleComponentClick = useCallback((id: string) => {
+    if (editor.state.simulating) return;
     if (editor.state.activeTool === 'delete' && id) {
       editor.deleteItem(id);
     } else {
@@ -40,6 +43,7 @@ const Index = () => {
   }, [editor]);
 
   const handleWireClick = useCallback((id: string) => {
+    if (editor.state.simulating) return;
     if (editor.state.activeTool === 'delete') {
       editor.deleteItem(id);
     } else {
@@ -56,9 +60,16 @@ const Index = () => {
         switch (e.key.toLowerCase()) {
           case 'z': e.preventDefault(); editor.undo(); return;
           case 'y': e.preventDefault(); editor.redo(); return;
-          case 'd': e.preventDefault(); editor.duplicateSelected(); return;
+          case 'd': e.preventDefault(); if (!editor.state.simulating) editor.duplicateSelected(); return;
           case 's': e.preventDefault(); editor.saveProject(); return;
         }
+      }
+
+      if (editor.state.simulating) {
+        if (e.key === 'Escape') {
+          editor.toggleSimulation();
+        }
+        return; // Block other shortcuts during simulation
       }
 
       switch (e.key.toLowerCase()) {
@@ -117,7 +128,7 @@ const Index = () => {
           activeTool={editor.state.activeTool}
           zoom={editor.state.zoom}
           pan={editor.state.pan}
-          placingComponent={placingComponent}
+          placingComponent={editor.state.simulating ? null : placingComponent}
           wireInProgress={editor.getWireInProgress()}
           simulating={editor.state.simulating}
           onCanvasClick={handleCanvasClick}
@@ -127,6 +138,7 @@ const Index = () => {
           onWireClick={handleWireClick}
           onPanChange={editor.setPan}
           onZoomChange={editor.setZoom}
+          onSimComponentClick={editor.handleSimClick}
         />
         <PropertiesPanel
           selectedComponent={selectedComponent}
