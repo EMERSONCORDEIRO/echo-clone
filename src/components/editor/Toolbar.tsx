@@ -16,8 +16,11 @@ import {
   Play,
   Square,
   Copy,
+  BookOpen,
+  ChevronDown,
 } from 'lucide-react';
-import { useRef } from 'react';
+import { useRef, useState } from 'react';
+import { circuitPresets, CircuitPreset } from '@/lib/circuitPresets';
 
 interface ToolbarProps {
   activeTool: Tool;
@@ -66,6 +69,7 @@ export function Toolbar({
   simulating,
 }: ToolbarProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [showExamples, setShowExamples] = useState(false);
 
   const handleFileLoad = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -78,6 +82,16 @@ export function Toolbar({
     e.target.value = '';
   };
 
+  const handleLoadPreset = (preset: CircuitPreset) => {
+    const json = JSON.stringify({
+      components: preset.components,
+      wires: preset.wires,
+      version: '1.0',
+    });
+    onLoad(json);
+    setShowExamples(false);
+  };
+
   const BtnClass = (active?: boolean, disabled?: boolean) =>
     `p-2 rounded transition-colors ${
       active
@@ -86,6 +100,18 @@ export function Toolbar({
         ? 'text-muted-foreground/40 cursor-not-allowed'
         : 'text-muted-foreground hover:text-foreground hover:bg-secondary'
     }`;
+
+  const levelColors: Record<string, string> = {
+    iniciante: 'text-green-400',
+    intermediario: 'text-yellow-400',
+    avancado: 'text-red-400',
+  };
+
+  const levelLabels: Record<string, string> = {
+    iniciante: '🔰 Iniciante',
+    intermediario: '🎓 Intermediário',
+    avancado: '🏆 Avançado',
+  };
 
   return (
     <div className="flex items-center gap-1 bg-muted px-3 py-1.5 border-b border-border select-none">
@@ -107,6 +133,45 @@ export function Toolbar({
           <FolderOpen size={18} />
         </button>
         <input ref={fileInputRef} type="file" accept=".json" onChange={handleFileLoad} className="hidden" />
+        
+        {/* Exemplos */}
+        <div className="relative">
+          <button
+            onClick={() => setShowExamples(!showExamples)}
+            className={`${BtnClass(showExamples)} flex items-center gap-1`}
+            title="Exemplos de Circuitos"
+          >
+            <BookOpen size={18} />
+            <ChevronDown size={12} />
+          </button>
+          {showExamples && (
+            <>
+              <div className="fixed inset-0 z-40" onClick={() => setShowExamples(false)} />
+              <div className="absolute top-full left-0 mt-1 bg-card border border-border rounded-md shadow-lg z-50 w-72">
+                <div className="px-3 py-2 border-b border-border">
+                  <h3 className="text-xs font-mono font-semibold text-primary uppercase">📚 Exemplos de Circuitos</h3>
+                </div>
+                <div className="max-h-80 overflow-y-auto py-1">
+                  {circuitPresets.map(preset => (
+                    <button
+                      key={preset.id}
+                      onClick={() => handleLoadPreset(preset)}
+                      className="w-full text-left px-3 py-2 hover:bg-secondary/50 transition-colors"
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-medium text-foreground">{preset.name}</span>
+                        <span className={`text-[10px] ${levelColors[preset.level]}`}>
+                          {levelLabels[preset.level]}
+                        </span>
+                      </div>
+                      <p className="text-[10px] text-muted-foreground mt-0.5">{preset.description}</p>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </>
+          )}
+        </div>
       </div>
 
       {/* Desfazer/Refazer */}
