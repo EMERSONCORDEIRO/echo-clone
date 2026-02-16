@@ -1,6 +1,6 @@
 import { useRef, useEffect, useCallback, useState } from 'react';
 import { SchematicComponent, Wire, Tool, Point, ComponentType } from '@/types/schematic';
-import { drawComponent, getComponentBounds, snapToGrid } from '@/lib/componentShapes';
+import { drawComponent, getComponentBounds, snapToGrid, getTerminals } from '@/lib/componentShapes';
 import { isToggleable } from '@/lib/simulationEngine';
 
 interface SchematicCanvasProps {
@@ -34,26 +34,15 @@ const COLORS = {
   bg: '#1a2332',
   simOn: '#22c55e',
   simOff: '#64748b',
+  terminal: '#94a3b8',
+  terminalHover: '#38bdf8',
 };
 
 export function SchematicCanvas({
-  components,
-  wires,
-  selectedIds,
-  activeTool,
-  zoom,
-  pan,
-  placingComponent,
-  wireInProgress,
-  simulating,
-  onCanvasClick,
-  onCanvasRightClick,
-  onComponentClick,
-  onComponentDrag,
-  onWireClick,
-  onPanChange,
-  onZoomChange,
-  onSimComponentClick,
+  components, wires, selectedIds, activeTool, zoom, pan,
+  placingComponent, wireInProgress, simulating,
+  onCanvasClick, onCanvasRightClick, onComponentClick, onComponentDrag,
+  onWireClick, onPanChange, onZoomChange, onSimComponentClick,
 }: SchematicCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -111,6 +100,25 @@ export function SchematicCanvas({
     [pan, zoom]
   );
 
+  // Draw terminal dots on components
+  const drawTerminals = useCallback(
+    (ctx: CanvasRenderingContext2D, comp: SchematicComponent) => {
+      const rad = (comp.rotation * Math.PI) / 180;
+      comp.terminals.forEach(t => {
+        const rx = t.position.x * Math.cos(rad) - t.position.y * Math.sin(rad);
+        const ry = t.position.x * Math.sin(rad) + t.position.y * Math.cos(rad);
+        const absX = comp.position.x + rx;
+        const absY = comp.position.y + ry;
+
+        ctx.fillStyle = COLORS.terminal;
+        ctx.beginPath();
+        ctx.arc(absX, absY, 3, 0, Math.PI * 2);
+        ctx.fill();
+      });
+    },
+    []
+  );
+
   const render = useCallback(() => {
     const canvas = canvasRef.current;
     const container = containerRef.current;
@@ -140,12 +148,12 @@ export function SchematicCanvas({
       const isEnergized = wire.energized && simulating;
       ctx.strokeStyle = isSelected ? COLORS.selection : (isEnergized ? COLORS.wireEnergized : COLORS.wire);
       ctx.lineWidth = isSelected ? 3 : (isEnergized ? 3 : 2);
-      
+
       if (isEnergized) {
         ctx.shadowColor = COLORS.wireEnergized;
-        ctx.shadowBlur = 6;
+        ctx.shadowBlur = 8;
       }
-      
+
       ctx.beginPath();
       wire.points.forEach((p, i) => {
         if (i === 0) ctx.moveTo(p.x, p.y);
@@ -153,7 +161,8 @@ export function SchematicCanvas({
       });
       ctx.stroke();
       ctx.shadowBlur = 0;
-      
+
+      // Junction dots at wire points
       wire.points.forEach(p => {
         ctx.fillStyle = isEnergized ? COLORS.wireEnergized : COLORS.wire;
         ctx.beginPath();
@@ -183,7 +192,7 @@ export function SchematicCanvas({
     components.forEach(comp => {
       const isSelected = selectedIds.includes(comp.id);
       const compStroke = simulating && comp.simState === 'on' ? COLORS.simOn : COLORS.stroke;
-      
+
       drawComponent(
         ctx, comp.type, comp.position.x, comp.position.y,
         comp.rotation, isSelected,
@@ -191,25 +200,35 @@ export function SchematicCanvas({
         comp.simState
       );
 
+      // Draw terminal connection dots
+      if (!simulating) {
+        drawTerminals(ctx, comp);
+      }
+
       // Toggleable indicator during simulation
       if (simulating && isToggleable(comp.type)) {
         ctx.save();
         ctx.translate(comp.position.x, comp.position.y);
-        
-        // Small indicator showing open/closed state
+
         const isClosed = comp.simState === 'on';
         ctx.fillStyle = isClosed ? '#22c55e' : '#ef4444';
         ctx.beginPath();
-        ctx.arc(18, -18, 5, 0, Math.PI * 2);
+        ctx.arc(22, -22, 6, 0, Math.PI * 2);
         ctx.fill();
-        
-        // Cursor hint
-        ctx.strokeStyle = '#ffffff44';
-        ctx.lineWidth = 1;
+
+        // Pulsing ring for clickable hint
+        ctx.strokeStyle = '#ffffff66';
+        ctx.lineWidth = 1.5;
         ctx.beginPath();
-        ctx.arc(18, -18, 7, 0, Math.PI * 2);
+        ctx.arc(22, -22, 9, 0, Math.PI * 2);
         ctx.stroke();
-        
+
+        // "Click" text hint
+        ctx.font = '8px JetBrains Mono';
+        ctx.fillStyle = '#ffffffaa';
+        ctx.textAlign = 'center';
+        ctx.fillText('▶', 22, -10);
+
         ctx.restore();
       }
 
@@ -237,8 +256,8 @@ export function SchematicCanvas({
 
     // Status bar
     const worldMouse = screenToWorld(mousePos.x, mousePos.y);
-    ctx.fillStyle = 'rgba(0,0,0,0.7)';
-    ctx.fillRect(0, rect.height - 26, rect.width, 26);
+    ctx.fillStyle = 'rgba(0,0,0,0.8)';
+    ctx.fillRect(0, rect.height - 28, rect.width, 28);
     ctx.font = '11px "JetBrains Mono"';
     ctx.fillStyle = '#94a3b8';
     ctx.textAlign = 'left';
@@ -253,14 +272,14 @@ export function SchematicCanvas({
       ? `X: ${Math.round(worldMouse.x)}  Y: ${Math.round(worldMouse.y)}  |  Clique nos contatos/chaves para alternar`
       : `X: ${Math.round(worldMouse.x)}  Y: ${Math.round(worldMouse.y)}  |  Componentes: ${components.length}  Fios: ${wires.length}  |  Ferramenta: ${toolNames[activeTool] || activeTool.toUpperCase()}`;
 
-    ctx.fillText(statusText, 10, rect.height - 13);
+    ctx.fillText(statusText, 10, rect.height - 14);
 
     if (simulating) {
       ctx.fillStyle = '#22c55e';
       ctx.textAlign = 'right';
-      ctx.fillText('● SIMULAÇÃO ATIVA', rect.width - 10, rect.height - 13);
+      ctx.fillText('● SIMULAÇÃO ATIVA', rect.width - 10, rect.height - 14);
     }
-  }, [components, wires, selectedIds, pan, zoom, mousePos, placingComponent, wireInProgress, activeTool, simulating, drawGrid, screenToWorld]);
+  }, [components, wires, selectedIds, pan, zoom, mousePos, placingComponent, wireInProgress, activeTool, simulating, drawGrid, screenToWorld, drawTerminals]);
 
   useEffect(() => {
     const animFrame = requestAnimationFrame(render);
@@ -269,19 +288,21 @@ export function SchematicCanvas({
 
   const findComponentAt = useCallback(
     (worldPoint: Point): SchematicComponent | undefined => {
+      // Use larger hit area during simulation for easier clicking
+      const extraPadding = simulating ? 10 : 0;
       for (let i = components.length - 1; i >= 0; i--) {
         const comp = components[i];
         const bounds = getComponentBounds(comp.type);
         if (
-          worldPoint.x >= comp.position.x - bounds.width &&
-          worldPoint.x <= comp.position.x + bounds.width &&
-          worldPoint.y >= comp.position.y - bounds.height / 2 &&
-          worldPoint.y <= comp.position.y + bounds.height / 2
+          worldPoint.x >= comp.position.x - bounds.width - extraPadding &&
+          worldPoint.x <= comp.position.x + bounds.width + extraPadding &&
+          worldPoint.y >= comp.position.y - bounds.height / 2 - extraPadding &&
+          worldPoint.y <= comp.position.y + bounds.height / 2 + extraPadding
         ) return comp;
       }
       return undefined;
     },
-    [components]
+    [components, simulating]
   );
 
   const findWireAt = useCallback(
@@ -290,7 +311,7 @@ export function SchematicCanvas({
         for (let i = 0; i < wire.points.length - 1; i++) {
           const a = wire.points[i];
           const b = wire.points[i + 1];
-          if (distToSegment(worldPoint, a, b) < 8) return wire;
+          if (distToSegment(worldPoint, a, b) < 10) return wire;
         }
       }
       return undefined;
@@ -321,7 +342,7 @@ export function SchematicCanvas({
       if (simulating && e.button === 0) {
         const world = screenToWorld(sx, sy);
         const comp = findComponentAt(world);
-        if (comp && onSimComponentClick) {
+        if (comp && isToggleable(comp.type) && onSimComponentClick) {
           onSimComponentClick(comp.id);
         }
         return;
@@ -398,10 +419,10 @@ export function SchematicCanvas({
     [zoom, pan, onZoomChange, onPanChange]
   );
 
-  const cursorClass = simulating ? 'cursor-pointer' : 
-    (placingComponent ? 'cursor-cell' : 
-    (activeTool === 'wire' ? 'cursor-crosshair' : 
-    (activeTool === 'delete' ? 'cursor-not-allowed' : 
+  const cursorClass = simulating ? 'cursor-pointer' :
+    (placingComponent ? 'cursor-cell' :
+    (activeTool === 'wire' ? 'cursor-crosshair' :
+    (activeTool === 'delete' ? 'cursor-not-allowed' :
     (activeTool === 'move' ? 'cursor-move' : 'cursor-default'))));
 
   return (

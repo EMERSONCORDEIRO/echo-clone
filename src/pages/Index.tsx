@@ -20,6 +20,8 @@ const Index = () => {
     if (editor.state.simulating) return;
     if (placingComponent) {
       editor.addComponent(placingComponent, point);
+      // Auto-deselect after placing (like CADe SIMU)
+      setPlacingComponent(null);
     } else if (editor.state.activeTool === 'wire') {
       editor.addWirePoint(point);
     }
