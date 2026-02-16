@@ -73,7 +73,6 @@ export const circuitPresets: CircuitPreset[] = [
         ],
         properties: {},
       },
-      // Switches
       {
         id: 's1', type: 'botoeira_na',
         position: { x: 200, y: 200 }, rotation: 0, label: 'S1',
@@ -101,7 +100,6 @@ export const circuitPresets: CircuitPreset[] = [
         ],
         properties: {},
       },
-      // Lamps
       {
         id: 'lr', type: 'lampada_vermelha',
         position: { x: 200, y: 320 }, rotation: 0, label: 'Vermelho',
@@ -139,15 +137,15 @@ export const circuitPresets: CircuitPreset[] = [
       },
     ],
     wires: [
-      // Source to junction
-      { id: 'w1', points: [{ x: 300, y: 120 }, { x: 300, y: 140 }, { x: 200, y: 140 }, { x: 200, y: 160 }] },
+      // Source to switches - branch from fonte t2 (300,120)
+      { id: 'w1', points: [{ x: 300, y: 120 }, { x: 200, y: 120 }, { x: 200, y: 160 }] },
       { id: 'w2', points: [{ x: 300, y: 120 }, { x: 300, y: 160 }] },
-      { id: 'w3', points: [{ x: 300, y: 120 }, { x: 300, y: 140 }, { x: 400, y: 140 }, { x: 400, y: 160 }] },
-      // Switches to lamps
+      { id: 'w3', points: [{ x: 300, y: 120 }, { x: 400, y: 120 }, { x: 400, y: 160 }] },
+      // Switches t2 (y+40=240) to lamps t1 (y-40=280)
       { id: 'w4', points: [{ x: 200, y: 240 }, { x: 200, y: 280 }] },
       { id: 'w5', points: [{ x: 300, y: 240 }, { x: 300, y: 280 }] },
       { id: 'w6', points: [{ x: 400, y: 240 }, { x: 400, y: 280 }] },
-      // Lamps to ground
+      // Lamps t2 (y+40=360) to ground t1 (300,400)
       { id: 'w7', points: [{ x: 200, y: 360 }, { x: 200, y: 400 }, { x: 300, y: 400 }] },
       { id: 'w8', points: [{ x: 300, y: 360 }, { x: 300, y: 400 }] },
       { id: 'w9', points: [{ x: 400, y: 360 }, { x: 400, y: 400 }, { x: 300, y: 400 }] },
@@ -253,19 +251,26 @@ export const circuitPresets: CircuitPreset[] = [
       },
     ],
     wires: [
-      // Comando
-      { id: 'w1', points: [{ x: 300, y: 100 }, { x: 300, y: 100 }] },
+      // L1 t1(300,20) -> Q1 t1(300,100)
+      { id: 'w1', points: [{ x: 300, y: 20 }, { x: 300, y: 100 }] },
+      // Q1 t2(300,180) -> S2 t1(300,200)
       { id: 'w2', points: [{ x: 300, y: 180 }, { x: 300, y: 200 }] },
+      // S2 t2(300,280) -> S1 t1(300,300)
       { id: 'w3', points: [{ x: 300, y: 280 }, { x: 300, y: 300 }] },
+      // S1 t2(300,380) -> K1 t1(300,400)
       { id: 'w4', points: [{ x: 300, y: 380 }, { x: 300, y: 400 }] },
+      // K1 t2(300,480) -> N t1(300,500)
       { id: 'w5', points: [{ x: 300, y: 480 }, { x: 300, y: 500 }] },
-      // Selo paralelo com S1
+      // Selo: branch from S2-S1 junction to K1a
       { id: 'w6', points: [{ x: 300, y: 300 }, { x: 460, y: 300 }] },
       { id: 'w7', points: [{ x: 460, y: 380 }, { x: 460, y: 400 }, { x: 300, y: 400 }] },
-      // Força
-      { id: 'w8', points: [{ x: 300, y: 100 }, { x: 600, y: 100 }, { x: 600, y: 160 }] },
+      // Força: L1 branch to K1f
+      { id: 'w8', points: [{ x: 300, y: 20 }, { x: 600, y: 20 }, { x: 600, y: 160 }] },
+      // K1f t2(600,240) -> M1 t1(600,280)
       { id: 'w9', points: [{ x: 600, y: 240 }, { x: 600, y: 280 }] },
+      // M1 t2(600,360) -> H1 t1(600,400)
       { id: 'w10', points: [{ x: 600, y: 360 }, { x: 600, y: 400 }] },
+      // H1 t2(600,480) -> N2 t1(600,500)
       { id: 'w11', points: [{ x: 600, y: 480 }, { x: 600, y: 500 }] },
     ],
   },
@@ -369,7 +374,6 @@ export const circuitPresets: CircuitPreset[] = [
         ],
         properties: {},
       },
-      // Sensores
       {
         id: 'se1', type: 'sensor_optico',
         position: { x: 200, y: 360 }, rotation: 0, label: 'B1 - Início',
@@ -397,7 +401,6 @@ export const circuitPresets: CircuitPreset[] = [
         ],
         properties: {},
       },
-      // Saídas
       {
         id: 'mot', type: 'motor_dc',
         position: { x: 200, y: 480 }, rotation: 0, label: 'M1 - Esteira',
@@ -426,24 +429,6 @@ export const circuitPresets: CircuitPreset[] = [
         properties: {},
       },
       {
-        id: 'lr', type: 'lampada_vermelha',
-        position: { x: 700, y: 480 }, rotation: 0, label: 'H2 - Metal',
-        terminals: [
-          { id: 't1', position: { x: 0, y: -40 }, connected: false },
-          { id: 't2', position: { x: 0, y: 40 }, connected: false },
-        ],
-        properties: {},
-      },
-      {
-        id: 'bz', type: 'buzzer',
-        position: { x: 800, y: 480 }, rotation: 0, label: 'BZ1 - Alarme',
-        terminals: [
-          { id: 't1', position: { x: 0, y: -40 }, connected: false },
-          { id: 't2', position: { x: 0, y: 40 }, connected: false },
-        ],
-        properties: {},
-      },
-      {
         id: 'gnd', type: 'terra',
         position: { x: 400, y: 600 }, rotation: 0, label: 'GND',
         terminals: [{ id: 't1', position: { x: 0, y: -40 }, connected: false }],
@@ -451,25 +436,22 @@ export const circuitPresets: CircuitPreset[] = [
       },
     ],
     wires: [
+      // fonte t2(400,100) -> dj t1(400,120)
       { id: 'w1', points: [{ x: 400, y: 100 }, { x: 400, y: 120 }] },
+      // dj t2(400,200) -> emg t1(400,220)
       { id: 'w2', points: [{ x: 400, y: 200 }, { x: 400, y: 220 }] },
-      // Branch to sensors
+      // emg t2(400,300) -> branch to sensors
       { id: 'w3', points: [{ x: 400, y: 300 }, { x: 200, y: 300 }, { x: 200, y: 320 }] },
       { id: 'w4', points: [{ x: 400, y: 300 }, { x: 400, y: 320 }] },
       { id: 'w5', points: [{ x: 400, y: 300 }, { x: 600, y: 300 }, { x: 600, y: 320 }] },
-      // Sensors to outputs
+      // sensors t2 -> outputs t1
       { id: 'w6', points: [{ x: 200, y: 400 }, { x: 200, y: 440 }] },
       { id: 'w7', points: [{ x: 400, y: 400 }, { x: 400, y: 440 }] },
       { id: 'w8', points: [{ x: 600, y: 400 }, { x: 600, y: 440 }] },
-      // Extra outputs from metal sensor
-      { id: 'w9', points: [{ x: 400, y: 400 }, { x: 700, y: 400 }, { x: 700, y: 440 }] },
-      { id: 'w10', points: [{ x: 400, y: 400 }, { x: 800, y: 400 }, { x: 800, y: 440 }] },
-      // Outputs to ground
+      // outputs t2 -> ground
       { id: 'w11', points: [{ x: 200, y: 520 }, { x: 200, y: 560 }, { x: 400, y: 560 }] },
       { id: 'w12', points: [{ x: 400, y: 520 }, { x: 400, y: 560 }] },
       { id: 'w13', points: [{ x: 600, y: 520 }, { x: 600, y: 560 }, { x: 400, y: 560 }] },
-      { id: 'w14', points: [{ x: 700, y: 520 }, { x: 700, y: 560 }, { x: 400, y: 560 }] },
-      { id: 'w15', points: [{ x: 800, y: 520 }, { x: 800, y: 560 }, { x: 400, y: 560 }] },
     ],
   },
 ];

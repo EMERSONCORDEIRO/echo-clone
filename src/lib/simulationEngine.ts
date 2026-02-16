@@ -9,6 +9,7 @@ const TOGGLEABLE: ComponentType[] = [
   'contato_temp_na', 'contato_temp_nf',
   'disjuntor_monopolar', 'disjuntor_bipolar', 'disjuntor_tripolar',
   'fusivel',
+  'sensor_indutivo', 'sensor_capacitivo', 'sensor_optico', 'sensor_temperatura',
 ];
 const LOADS: ComponentType[] = [
   'lampada', 'lampada_verde', 'lampada_vermelha', 'lampada_amarela',
@@ -19,18 +20,16 @@ const LOADS: ComponentType[] = [
 const NORMALLY_CLOSED: ComponentType[] = [
   'contato_nf', 'botoeira_nf', 'botoeira_emergencia', 'contator_nf', 'rele_nf', 'contato_temp_nf',
 ];
-
-// Protection devices start closed
 const PROTECTION_CLOSED: ComponentType[] = [
   'disjuntor_monopolar', 'disjuntor_bipolar', 'disjuntor_tripolar', 'fusivel',
 ];
+const RETURN_PATH: ComponentType[] = ['neutro', 'terra'];
 
-const SNAP = 20;
-const PROXIMITY = 12; // how close terminals/wire endpoints need to be
+const PROXIMITY = 15;
 
 export interface SimState {
   componentStates: Map<string, 'on' | 'off' | 'fault'>;
-  switchStates: Map<string, boolean>; // true = closed (conducting)
+  switchStates: Map<string, boolean>;
   wireEnergized: Map<string, boolean>;
 }
 
@@ -40,9 +39,7 @@ export function createInitialSimState(components: SchematicComponent[]): SimStat
 
   components.forEach(comp => {
     componentStates.set(comp.id, 'off');
-
     if (TOGGLEABLE.includes(comp.type)) {
-      // Normally closed contacts start closed, normally open start open
       const isClosed = NORMALLY_CLOSED.includes(comp.type) || PROTECTION_CLOSED.includes(comp.type);
       switchStates.set(comp.id, isClosed);
     }
@@ -80,10 +77,40 @@ function pointsClose(a: Point, b: Point): boolean {
   return Math.abs(a.x - b.x) < PROXIMITY && Math.abs(a.y - b.y) < PROXIMITY;
 }
 
-// Build connectivity graph
-interface Node {
-  type: 'component' | 'wire';
-  id: string;
+function bfs(
+  startIds: string[],
+  adj: Map<string, Set<string>>,
+  components: SchematicComponent[],
+  simState: SimState
+): Set<string> {
+  const visited = new Set<string>();
+  const queue: string[] = [];
+
+  for (const id of startIds) {
+    visited.add(id);
+    queue.push(id);
+  }
+
+  while (queue.length > 0) {
+    const current = queue.shift()!;
+    const neighbors = adj.get(current);
+    if (!neighbors) continue;
+
+    for (const neighborId of neighbors) {
+      if (visited.has(neighborId)) continue;
+
+      const comp = components.find(c => c.id === neighborId);
+      if (comp && TOGGLEABLE.includes(comp.type)) {
+        const isClosed = simState.switchStates.get(comp.id);
+        if (!isClosed) continue; // Open switch blocks
+      }
+
+      visited.add(neighborId);
+      queue.push(neighborId);
+    }
+  }
+
+  return visited;
 }
 
 export function runSimulation(
@@ -94,19 +121,15 @@ export function runSimulation(
   const newComponentStates = new Map<string, 'on' | 'off' | 'fault'>();
   const newWireEnergized = new Map<string, boolean>();
 
-  // Initialize all as off
   components.forEach(c => newComponentStates.set(c.id, 'off'));
   wires.forEach(w => newWireEnergized.set(w.id, false));
 
-  // Build adjacency: which components/wires are connected
-  // A wire endpoint connects to a component terminal if they're close enough
-  const adj = new Map<string, Set<string>>(); // node id -> set of connected node ids
-
+  // Build adjacency
+  const adj = new Map<string, Set<string>>();
   const ensureNode = (id: string) => {
     if (!adj.has(id)) adj.set(id, new Set());
   };
 
-  // For each component, compute absolute terminal positions
   const compTerminals = new Map<string, Point[]>();
   components.forEach(comp => {
     compTerminals.set(comp.id, getAbsoluteTerminals(comp));
@@ -116,38 +139,6 @@ export function runSimulation(
   wires.forEach(wire => {
     ensureNode(wire.id);
 
-    // Check wire endpoints against component terminals
-    const wireEndpoints = [wire.points[0], wire.points[wire.points.length - 1]];
-
-    components.forEach(comp => {
-      const terminals = compTerminals.get(comp.id)!;
-      for (const wep of wireEndpoints) {
-        for (const term of terminals) {
-          if (pointsClose(wep, term)) {
-            adj.get(wire.id)!.add(comp.id);
-            adj.get(comp.id)!.add(wire.id);
-            break;
-          }
-        }
-      }
-    });
-
-    // Check wire-to-wire connections (endpoints touching)
-    wires.forEach(other => {
-      if (other.id === wire.id) return;
-      ensureNode(other.id);
-      const otherEndpoints = [other.points[0], other.points[other.points.length - 1]];
-      for (const wep of wireEndpoints) {
-        for (const oep of otherEndpoints) {
-          if (pointsClose(wep, oep)) {
-            adj.get(wire.id)!.add(other.id);
-            adj.get(other.id)!.add(wire.id);
-          }
-        }
-      }
-    });
-
-    // Also check wire intermediate points touching component terminals
     wire.points.forEach(wp => {
       components.forEach(comp => {
         const terminals = compTerminals.get(comp.id)!;
@@ -160,54 +151,54 @@ export function runSimulation(
         }
       });
     });
-  });
 
-  // BFS from sources, respecting switch states
-  // A switch that is open blocks traversal through it
-  const energized = new Set<string>();
-  const queue: string[] = [];
-
-  // Start from all source components
-  components.forEach(comp => {
-    if (SOURCES.includes(comp.type)) {
-      energized.add(comp.id);
-      queue.push(comp.id);
-      newComponentStates.set(comp.id, 'on');
-    }
-  });
-
-  while (queue.length > 0) {
-    const current = queue.shift()!;
-    const neighbors = adj.get(current);
-    if (!neighbors) continue;
-
-    for (const neighborId of neighbors) {
-      if (energized.has(neighborId)) continue;
-
-      // Check if the neighbor is a switch that blocks current
-      const comp = components.find(c => c.id === neighborId);
-      if (comp && TOGGLEABLE.includes(comp.type)) {
-        const isClosed = simState.switchStates.get(comp.id);
-        if (!isClosed) {
-          // Switch is open, don't traverse but mark as off
-          newComponentStates.set(comp.id, 'off');
-          continue;
+    wires.forEach(other => {
+      if (other.id === wire.id) return;
+      ensureNode(other.id);
+      for (const wp of wire.points) {
+        for (const op of other.points) {
+          if (pointsClose(wp, op)) {
+            adj.get(wire.id)!.add(other.id);
+            adj.get(other.id)!.add(wire.id);
+            return;
+          }
         }
       }
+    });
+  });
 
-      energized.add(neighborId);
-      queue.push(neighborId);
+  // Two BFS passes:
+  // 1. From sources (power supply side)
+  // 2. From return path (terra/neutro)
+  // A node is truly energized only if reachable from BOTH
+  const sourceIds = components
+    .filter(c => SOURCES.includes(c.type))
+    .map(c => c.id);
+  const returnIds = components
+    .filter(c => RETURN_PATH.includes(c.type))
+    .map(c => c.id);
+
+  const reachableFromSource = bfs(sourceIds, adj, components, simState);
+  const reachableFromReturn = bfs(returnIds, adj, components, simState);
+
+  // A node is energized if reachable from both source and return
+  const energized = new Set<string>();
+  for (const id of reachableFromSource) {
+    if (reachableFromReturn.has(id)) {
+      energized.add(id);
     }
   }
 
-  // Update states based on energization
+  // Also mark sources and returns as always on
+  sourceIds.forEach(id => { energized.add(id); newComponentStates.set(id, 'on'); });
+  returnIds.forEach(id => { energized.add(id); newComponentStates.set(id, 'on'); });
+
+  // Update states
   components.forEach(comp => {
-    if (energized.has(comp.id)) {
-      if (SOURCES.includes(comp.type)) {
-        newComponentStates.set(comp.id, 'on');
-      } else if (LOADS.includes(comp.type)) {
-        newComponentStates.set(comp.id, 'on');
-      } else if (TOGGLEABLE.includes(comp.type)) {
+    if (SOURCES.includes(comp.type) || RETURN_PATH.includes(comp.type)) {
+      newComponentStates.set(comp.id, 'on');
+    } else if (energized.has(comp.id)) {
+      if (TOGGLEABLE.includes(comp.type)) {
         const isClosed = simState.switchStates.get(comp.id);
         newComponentStates.set(comp.id, isClosed ? 'on' : 'off');
       } else {
