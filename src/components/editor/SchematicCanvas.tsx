@@ -38,12 +38,12 @@ const COLORS = {
   terminalHover: '#38bdf8',
 };
 
-export function SchematicCanvas({
+const SchematicCanvas = ({
   components, wires, selectedIds, activeTool, zoom, pan,
   placingComponent, wireInProgress, simulating,
   onCanvasClick, onCanvasRightClick, onComponentClick, onComponentDrag,
   onWireClick, onPanChange, onZoomChange, onSimComponentClick,
-}: SchematicCanvasProps) {
+}: SchematicCanvasProps) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [mousePos, setMousePos] = useState<Point>({ x: 0, y: 0 });
@@ -289,7 +289,7 @@ export function SchematicCanvas({
   const findComponentAt = useCallback(
     (worldPoint: Point): SchematicComponent | undefined => {
       // Use larger hit area during simulation for easier clicking
-      const extraPadding = simulating ? 10 : 0;
+      const extraPadding = simulating ? 20 : 0;
       for (let i = components.length - 1; i >= 0; i--) {
         const comp = components[i];
         const bounds = getComponentBounds(comp.type);
@@ -343,7 +343,12 @@ export function SchematicCanvas({
         const world = screenToWorld(sx, sy);
         const comp = findComponentAt(world);
         if (comp && isToggleable(comp.type) && onSimComponentClick) {
+          console.log(`[SIM] Toggling: ${comp.label} (${comp.type}) id=${comp.id}`);
           onSimComponentClick(comp.id);
+        } else if (comp) {
+          console.log(`[SIM] Clicked non-toggleable: ${comp.label} (${comp.type})`);
+        } else {
+          console.log(`[SIM] No component at world (${Math.round(world.x)}, ${Math.round(world.y)})`);
         }
         return;
       }
@@ -438,7 +443,9 @@ export function SchematicCanvas({
       />
     </div>
   );
-}
+};
+
+export { SchematicCanvas };
 
 function distToSegment(p: Point, a: Point, b: Point): number {
   const dx = b.x - a.x, dy = b.y - a.y;

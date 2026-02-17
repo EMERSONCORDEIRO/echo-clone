@@ -25,7 +25,7 @@ const PROTECTION_CLOSED: ComponentType[] = [
 ];
 const RETURN_PATH: ComponentType[] = ['neutro', 'terra'];
 
-const PROXIMITY = 15;
+const PROXIMITY = 22;
 
 export interface SimState {
   componentStates: Map<string, 'on' | 'off' | 'fault'>;
