@@ -338,17 +338,18 @@ const SchematicCanvas = ({
         return;
       }
 
-      // During simulation, clicking toggles switches
+      // During simulation, clicking toggles switches AND selects component
       if (simulating && e.button === 0) {
         const world = screenToWorld(sx, sy);
         const comp = findComponentAt(world);
-        if (comp && isToggleable(comp.type) && onSimComponentClick) {
-          console.log(`[SIM] Toggling: ${comp.label} (${comp.type}) id=${comp.id}`);
-          onSimComponentClick(comp.id);
-        } else if (comp) {
-          console.log(`[SIM] Clicked non-toggleable: ${comp.label} (${comp.type})`);
+        if (comp) {
+          onComponentClick(comp.id);
+          if (isToggleable(comp.type) && onSimComponentClick) {
+            console.log(`[SIM] Toggling: ${comp.label} (${comp.type}) id=${comp.id}`);
+            onSimComponentClick(comp.id);
+          }
         } else {
-          console.log(`[SIM] No component at world (${Math.round(world.x)}, ${Math.round(world.y)})`);
+          onComponentClick('');
         }
         return;
       }

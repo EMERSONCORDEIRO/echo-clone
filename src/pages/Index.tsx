@@ -36,7 +36,11 @@ const Index = () => {
   }, [placingComponent, editor]);
 
   const handleComponentClick = useCallback((id: string) => {
-    if (editor.state.simulating) return;
+    if (editor.state.simulating) {
+      // During simulation, allow selecting to view properties but not deleting
+      editor.selectComponent(id || null);
+      return;
+    }
     if (editor.state.activeTool === 'delete' && id) {
       editor.deleteItem(id);
     } else {
