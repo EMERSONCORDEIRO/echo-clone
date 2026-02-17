@@ -223,14 +223,33 @@ export function useSchematicEditor() {
   }, []);
 
   const handleSimClick = useCallback((componentId: string) => {
-    if (!simStateRef.current) return;
+    if (!simStateRef.current) {
+      console.log('[SIM] No sim state ref');
+      return;
+    }
     
     const comp = state.components.find(c => c.id === componentId);
-    if (!comp || !isToggleable(comp.type)) return;
+    if (!comp || !isToggleable(comp.type)) {
+      console.log('[SIM] Component not found or not toggleable:', componentId);
+      return;
+    }
 
+    const prevClosed = simStateRef.current.switchStates.get(componentId);
     const newSimState = toggleSwitch(simStateRef.current, componentId);
     const result = runSimulation(state.components, state.wires, newSimState);
     simStateRef.current = result;
+
+    console.log(`[SIM] ${comp.label}: ${prevClosed ? 'FECHADO→ABERTO' : 'ABERTO→FECHADO'}`);
+    
+    // Log energized loads
+    state.components.forEach(c => {
+      const newState = result.componentStates.get(c.id);
+      if (newState === 'on' && c.type !== 'fonte_ac' && c.type !== 'fonte_dc' && 
+          c.type !== 'fase_l1' && c.type !== 'fase_l2' && c.type !== 'fase_l3' && 
+          c.type !== 'neutro' && c.type !== 'terra') {
+        console.log(`[SIM]   ✓ ${c.label} (${c.type}) = LIGADO`);
+      }
+    });
 
     setState(prev => ({
       ...prev,

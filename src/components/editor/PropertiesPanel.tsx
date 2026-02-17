@@ -7,7 +7,7 @@ interface PropertiesPanelProps {
   onUpdateLabel: (id: string, label: string) => void;
 }
 
-export function PropertiesPanel({ selectedComponent, onUpdateLabel }: PropertiesPanelProps) {
+export const PropertiesPanel = ({ selectedComponent, onUpdateLabel }: PropertiesPanelProps) => {
   const [editing, setEditing] = useState(false);
   const [editLabel, setEditLabel] = useState('');
 
