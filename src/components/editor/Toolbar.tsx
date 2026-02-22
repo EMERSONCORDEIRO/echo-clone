@@ -34,6 +34,7 @@ interface ToolbarProps {
   onRedo: () => void;
   onSave: () => void;
   onLoad: (json: string) => void;
+  onLoadCadeFile: (buffer: ArrayBuffer, fileName: string) => void;
   onSimToggle: () => void;
   onDuplicate: () => void;
   zoom: number;
@@ -61,6 +62,7 @@ export function Toolbar({
   onRedo,
   onSave,
   onLoad,
+  onLoadCadeFile,
   onSimToggle,
   onDuplicate,
   zoom,
@@ -74,11 +76,25 @@ export function Toolbar({
   const handleFileLoad = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      onLoad(ev.target?.result as string);
-    };
-    reader.readAsText(file);
+    const fileName = file.name.toLowerCase();
+    
+    if (fileName.endsWith('.cad')) {
+      // Arquivo CADe SIMU - ler como ArrayBuffer
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        if (ev.target?.result instanceof ArrayBuffer) {
+          onLoadCadeFile(ev.target.result, file.name);
+        }
+      };
+      reader.readAsArrayBuffer(file);
+    } else {
+      // Arquivo JSON
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        onLoad(ev.target?.result as string);
+      };
+      reader.readAsText(file);
+    }
     e.target.value = '';
   };
 
@@ -132,7 +148,7 @@ export function Toolbar({
         <button onClick={() => fileInputRef.current?.click()} className={BtnClass()} title="Abrir Projeto">
           <FolderOpen size={18} />
         </button>
-        <input ref={fileInputRef} type="file" accept=".json" onChange={handleFileLoad} className="hidden" />
+        <input ref={fileInputRef} type="file" accept=".json,.cad" onChange={handleFileLoad} className="hidden" />
         
         {/* Exemplos */}
         <div className="relative">
