@@ -115,6 +115,7 @@ const Index = () => {
         onRedo={editor.redo}
         onSave={editor.saveProject}
         onLoad={editor.loadProject}
+        onLoadCadeFile={editor.loadCadeFile}
         onSimToggle={editor.toggleSimulation}
         onDuplicate={editor.duplicateSelected}
         zoom={editor.state.zoom}
