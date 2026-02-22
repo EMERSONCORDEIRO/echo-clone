@@ -329,11 +329,18 @@ export function useSchematicEditor() {
   }, [pushUndo]);
 
   const loadCadeFile = useCallback((buffer: ArrayBuffer, fileName: string) => {
-    const result = parseCadeSimuFile(buffer);
+    // Try ArrayBuffer first, then text fallback
+    let result = parseCadeSimuFile(buffer);
     
-    if (result.warnings.length > 0) {
-      result.warnings.forEach(w => console.warn('[CADe SIMU Import]', w));
+    if (!result.success || result.components.length === 0) {
+      const textContent = new TextDecoder('iso-8859-1').decode(new Uint8Array(buffer));
+      const textResult = parseCadeSimuFile(textContent);
+      if (textResult.success && textResult.components.length > 0) {
+        result = textResult;
+      }
     }
+
+    result.warnings.forEach(w => console.warn('[Import]', w));
     
     if (result.success && result.components.length > 0) {
       pushUndo();
@@ -345,35 +352,25 @@ export function useSchematicEditor() {
         simulating: false,
       }));
       simStateRef.current = null;
-      console.log(`[CADe SIMU] ${result.message}`);
-    } else {
-      console.error('[CADe SIMU]', result.message);
-      // Try as text fallback
-      const textDecoder = new TextDecoder('iso-8859-1');
-      const textContent = textDecoder.decode(new Uint8Array(buffer));
-      const textResult = parseCadeSimuFile(textContent);
       
-      if (textResult.success && textResult.components.length > 0) {
-        pushUndo();
-        setState(prev => ({
-          ...prev,
-          components: textResult.components,
-          wires: textResult.wires,
-          selectedIds: [],
-          simulating: false,
-        }));
-        simStateRef.current = null;
-        console.log(`[CADe SIMU] ${textResult.message}`);
-      } else {
-        alert(
-          `Não foi possível importar "${fileName}".\n\n` +
-          'O CADe SIMU usa um formato binário proprietário.\n\n' +
-          'Dicas:\n' +
-          '• Os componentes identificados foram posicionados automaticamente\n' +
-          '• Reorganize e reconecte os fios manualmente\n' +
-          '• Ou recrie o circuito usando nossa paleta de componentes'
-        );
-      }
+      const formatInfo = result.format === 'dxf' ? ' (DXF)' 
+        : result.format === 'xml' ? ' (XML)' 
+        : result.format === 'binary' ? ' (binário)' : '';
+      
+      alert(
+        `✅ Importação${formatInfo} concluída!\n\n` +
+        `${result.message}\n\n` +
+        (result.warnings.length > 0 ? '⚠️ ' + result.warnings.join('\n⚠️ ') : '')
+      );
+    } else {
+      alert(
+        `❌ Não foi possível importar "${fileName}".\n\n` +
+        'O formato .cad do CADe SIMU é binário proprietário.\n\n' +
+        '💡 SOLUÇÃO: No CADe SIMU, exporte como DXF:\n' +
+        '   Arquivo → Exportar → DXF\n' +
+        '   Depois importe o arquivo .dxf aqui.\n\n' +
+        'Formatos suportados: .json, .dxf, .cad'
+      );
     }
   }, [pushUndo]);
 

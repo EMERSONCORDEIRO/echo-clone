@@ -78,8 +78,8 @@ export function Toolbar({
     if (!file) return;
     const fileName = file.name.toLowerCase();
     
-    if (fileName.endsWith('.cad')) {
-      // Arquivo CADe SIMU - ler como ArrayBuffer
+    if (fileName.endsWith('.cad') || fileName.endsWith('.dxf')) {
+      // Arquivo CADe SIMU ou DXF - ler como ArrayBuffer
       const reader = new FileReader();
       reader.onload = (ev) => {
         if (ev.target?.result instanceof ArrayBuffer) {
@@ -148,7 +148,7 @@ export function Toolbar({
         <button onClick={() => fileInputRef.current?.click()} className={BtnClass()} title="Abrir Projeto">
           <FolderOpen size={18} />
         </button>
-        <input ref={fileInputRef} type="file" accept=".json,.cad" onChange={handleFileLoad} className="hidden" />
+        <input ref={fileInputRef} type="file" accept=".json,.cad,.dxf" onChange={handleFileLoad} className="hidden" />
         
         {/* Exemplos */}
         <div className="relative">
